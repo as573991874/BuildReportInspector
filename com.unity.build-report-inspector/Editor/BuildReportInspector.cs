@@ -12,11 +12,18 @@ using Unity.BuildReportInspector.Mobile;
 
 namespace Unity.BuildReportInspector
 {
+    public class CacheReportData
+    {
+        public List<BuildFile> files;
+        public string longestCommonRoot;
+    }
+
     /// <summary>
     /// Custom inspector implementation for UnityEditor.Build.Reporting.BuildReport objects
     /// </summary>
     [CustomEditor(typeof(BuildReport))]
-    public class BuildReportInspector : Editor {
+    public class BuildReportInspector : Editor
+    {
         [MenuItem("Window/Open Last Build Report", true)]
         public static bool ValidateOpenLastBuild()
         {
@@ -42,6 +49,41 @@ namespace Unity.BuildReportInspector
             get { return target as BuildReport; }
         }
 
+        private static BuildReport _cacheReport;
+        private static CacheReportData _cacheReportData;
+        private static CacheReportData GetBuildReportData(BuildReport report)
+        {
+            if (_cacheReport == report && _cacheReportData != null)
+            {
+                return _cacheReportData;
+            }
+
+            _cacheReport = report;
+            _cacheReportData = new CacheReportData();
+            _cacheReportData.files = new List<BuildFile>();
+
+            var files = report.files;
+            var longestCommonRoot = files[0].path;
+            var tempRoot = Path.GetFullPath("Temp");
+            foreach (var file in files)
+            {
+                if (file.path.StartsWith(tempRoot))
+                    continue;
+                _cacheReportData.files.Add(file);
+                for (var i = 0; i < longestCommonRoot.Length && i < file.path.Length; i++)
+                {
+                    if (longestCommonRoot[i] == file.path[i])
+                        continue;
+                    longestCommonRoot = longestCommonRoot.Substring(0, i);
+                    break;
+                }
+            }
+            _cacheReportData.longestCommonRoot = longestCommonRoot;
+            return _cacheReportData;
+        }
+
+        private static int slideV = 0;
+
 #if UNITY_2019_3_OR_NEWER
         private MobileAppendix mobileAppendix
         { 
@@ -51,13 +93,14 @@ namespace Unity.BuildReportInspector
 
         private static GUIStyle s_SizeStyle;
 
-        private static GUIStyle SizeStyle {
+        private static GUIStyle SizeStyle
+        {
             get
             {
                 if (s_SizeStyle == null)
                     s_SizeStyle = new GUIStyle(GUI.skin.label);
                 s_SizeStyle.alignment = TextAnchor.MiddleRight;
-                return s_SizeStyle;   
+                return s_SizeStyle;
             }
         }
 
@@ -83,7 +126,7 @@ namespace Unity.BuildReportInspector
                     return s_OddStyle;
                 s_OddStyle = new GUIStyle(GUIStyle.none)
                 {
-                    normal = {background = MakeColorTexture(new Color(0.5f, 0.5f, 0.5f, 0.1f))}
+                    normal = { background = MakeColorTexture(new Color(0.5f, 0.5f, 0.5f, 0.1f)) }
                 };
                 return s_OddStyle;
             }
@@ -99,7 +142,7 @@ namespace Unity.BuildReportInspector
                     return s_EvenStyle;
                 s_EvenStyle = new GUIStyle(GUIStyle.none)
                 {
-                    normal = {background = MakeColorTexture(new Color(0.5f, 0.5f, 0.5f, 0.0f))}
+                    normal = { background = MakeColorTexture(new Color(0.5f, 0.5f, 0.5f, 0.0f)) }
                 };
                 return s_EvenStyle;
             }
@@ -113,7 +156,7 @@ namespace Unity.BuildReportInspector
             {
                 if (s_DataFileStyle != null)
                     return s_DataFileStyle;
-                s_DataFileStyle = new GUIStyle(EditorStyles.foldout) {fontStyle = FontStyle.Bold};
+                s_DataFileStyle = new GUIStyle(EditorStyles.foldout) { fontStyle = FontStyle.Bold };
                 return s_DataFileStyle;
             }
         }
@@ -126,9 +169,9 @@ namespace Unity.BuildReportInspector
             SourceAssets,
             OutputFiles,
             Stripping,
-    #if UNITY_2020_1_OR_NEWER
+#if UNITY_2020_1_OR_NEWER
             ScenesUsingAssets,
-    #endif
+#endif
         };
 
         readonly string[] ReportDisplayModeStrings = {
@@ -184,7 +227,7 @@ namespace Unity.BuildReportInspector
             EditorGUILayout.LabelField("    Total Size: ", FormatSize(report.summary.totalSize));
             EditorGUILayout.LabelField("    Build Result: ", report.summary.result.ToString());
 #endif
-            
+
 
             mode = (ReportDisplayMode)GUILayout.Toolbar((int)mode, ReportDisplayModeStrings);
 
@@ -203,7 +246,7 @@ namespace Unity.BuildReportInspector
             }
 #endif
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-            switch(mode)
+            switch (mode)
             {
                 case ReportDisplayMode.BuildSteps:
                     OnBuildStepGUI();
@@ -228,11 +271,11 @@ namespace Unity.BuildReportInspector
                 case ReportDisplayMode.Stripping:
                     OnStrippingGUI();
                     break;
-    #if UNITY_2020_1_OR_NEWER
+#if UNITY_2020_1_OR_NEWER
                 case ReportDisplayMode.ScenesUsingAssets:
                     OnScenesUsingAssetsGUI();
                     break;
-    #endif
+#endif
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -265,7 +308,7 @@ namespace Unity.BuildReportInspector
                 children = new List<BuildStepNode>();
 
                 worstChildrenLogType = LogType.Log;
-                if(step.HasValue)
+                if (step.HasValue)
                 {
                     foreach (var message in step.Value.messages)
                     {
@@ -280,7 +323,7 @@ namespace Unity.BuildReportInspector
 
             internal void UpdateWorstChildrenLogType()
             {
-                foreach(var child in children)
+                foreach (var child in children)
                 {
                     child.UpdateWorstChildrenLogType();
                     worstChildrenLogType = WorseLogType(worstChildrenLogType, child.worstChildrenLogType);
@@ -291,7 +334,7 @@ namespace Unity.BuildReportInspector
             {
                 switchBackgroundColor = !switchBackgroundColor;
                 GUILayout.BeginVertical(switchBackgroundColor ? OddStyle : EvenStyle);
-                GUILayout.BeginHorizontal();                
+                GUILayout.BeginHorizontal();
                 GUILayout.Space(10 + indentPixels);
 
                 if (children.Any() || (step.HasValue && step.Value.messages.Any()))
@@ -312,9 +355,9 @@ namespace Unity.BuildReportInspector
                     GUILayout.Label(step.GetValueOrDefault().name);
 
                 GUILayout.FlexibleSpace();
-                GUILayout.Label(step.GetValueOrDefault().duration.Hours + ":" + 
-                                step.GetValueOrDefault().duration.Minutes.ToString("D2") + ":" + 
-                                step.GetValueOrDefault().duration.Seconds.ToString("D2") + "." + 
+                GUILayout.Label(step.GetValueOrDefault().duration.Hours + ":" +
+                                step.GetValueOrDefault().duration.Minutes.ToString("D2") + ":" +
+                                step.GetValueOrDefault().duration.Seconds.ToString("D2") + "." +
                                 step.GetValueOrDefault().duration.Milliseconds.ToString("D3"));
                 GUILayout.EndHorizontal();
 
@@ -402,7 +445,7 @@ namespace Unity.BuildReportInspector
         BuildStepNode rootStepNode = new BuildStepNode(null, -1);
         private void OnBuildStepGUI()
         {
-            if(!rootStepNode.children.Any())
+            if (!rootStepNode.children.Any())
             {
                 // re-create steps hierarchy
                 var branch = new Stack<BuildStepNode>();
@@ -434,7 +477,7 @@ namespace Unity.BuildReportInspector
             }
 
             var odd = false;
-            foreach(var stepNode in rootStepNode.children)
+            foreach (var stepNode in rootStepNode.children)
                 stepNode.LayoutGUI(ref odd, 0);
         }
 
@@ -442,8 +485,8 @@ namespace Unity.BuildReportInspector
         {
             if (size < 1024)
                 return size + " B";
-            if (size < 1024*1024)
-                return (size/1024.00).ToString("F2") + " KB";
+            if (size < 1024 * 1024)
+                return (size / 1024.00).ToString("F2") + " KB";
             if (size < 1024 * 1024 * 1024)
                 return (size / (1024.0 * 1024.0)).ToString("F2") + " MB";
             return (size / (1024.0 * 1024.0 * 1024.0)).ToString("F2") + " GB";
@@ -462,8 +505,19 @@ namespace Unity.BuildReportInspector
         {
             GUILayout.BeginVertical();
             var odd = false;
+            int count = 0;
+            int max = 50;
+            float v = (float)assets.Where(entry => fileFilter == null || fileFilter == entry.outputFile).Where(entry => typeFilter == null || typeFilter == entry.type).Count() / (float)max;
+            int c = (int)(v);
+            slideV = (int)GUILayout.HorizontalSlider(slideV, 0, c);
+            GUILayout.Space(10);
             foreach (var entry in assets.Where(entry => fileFilter == null || fileFilter == entry.outputFile).Where(entry => typeFilter == null || typeFilter == entry.type))
             {
+                if (count < slideV * max)
+                {
+                    count++;
+                    continue;
+                }
                 GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
 
                 GUILayout.Label(entry.icon, GUILayout.MaxHeight(16), GUILayout.Width(20));
@@ -474,6 +528,11 @@ namespace Unity.BuildReportInspector
                 GUILayout.EndHorizontal();
                 vPos += k_LineHeight;
                 odd = !odd;
+                count++;
+                if (count >= (slideV + 1) * max)
+                {
+                    break;
+                }
             }
             GUILayout.EndVertical();
         }
@@ -525,7 +584,7 @@ namespace Unity.BuildReportInspector
                                 continue;
                             var assetEntry = new AssetEntry();
                             var asset = AssetImporter.GetAtPath(entryPath);
-                            var type = asset != null? asset.GetType().Name : "Unknown";
+                            var type = asset != null ? asset.GetType().Name : "Unknown";
                             if (type.EndsWith("Importer"))
                                 type = type.Substring(0, type.Length - 8);
                             var sizeProp = entry.FindPropertyRelative("packedSize");
@@ -550,7 +609,7 @@ namespace Unity.BuildReportInspector
                 }
                 DisplayAssetsView(vPos);
             }
-            else 
+            else
                 GUILayout.Label("No Appendices property found");
         }
 #endif // !UNITY_2019_3_OR_NEWER
@@ -639,7 +698,7 @@ namespace Unity.BuildReportInspector
 
                         if (assetsFoldout[outputFile.Key])
                             ShowAssets(assets, ref vPos, null, outputFile.Key);
-                    }             
+                    }
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -648,35 +707,35 @@ namespace Unity.BuildReportInspector
 
         private void OnOutputFilesGUI()
         {
-            if (report.files.Length == 0)
+            var data = BuildReportInspector.GetBuildReportData(report);
+            if (data == null || data.files.Count == 0)
                 return;
 
-            var longestCommonRoot = report.files[0].path;
-            var tempRoot = Path.GetFullPath("Temp");
-            foreach (var file in report.files)
-            {
-                if (file.path.StartsWith(tempRoot))
-                    continue;
-                for (var i = 0; i < longestCommonRoot.Length && i < file.path.Length; i++)
-                {
-                    if (longestCommonRoot[i] == file.path[i])
-                        continue;
-                    longestCommonRoot = longestCommonRoot.Substring(0, i);
-                    break;
-                }
-            }
+            int count = 0;
+            int max = 50;
+            float v = (float)data.files.Count / (float)max;
+            int c = (int)(v);
+            slideV = (int)GUILayout.HorizontalSlider(slideV, 0, c);
+            GUILayout.Space(10);
             var odd = false;
-            foreach (var file in report.files)
+            foreach (var file in data.files)
             {
-                if (file.path.StartsWith(tempRoot))
+                if (count < slideV * max)
+                {
+                    count++;
                     continue;
-                GUILayout.BeginHorizontal(odd? OddStyle:EvenStyle);
+                }
+                GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
                 odd = !odd;
-                GUILayout.Label(new GUIContent(file.path.Substring(longestCommonRoot.Length), file.path), GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 260));
+                GUILayout.Label(new GUIContent(file.path.Substring(data.longestCommonRoot.Length), file.path), GUILayout.MaxWidth(EditorGUIUtility.currentViewWidth - 260));
                 GUILayout.Label(file.role);
                 GUILayout.Label(FormatSize(file.size), SizeStyle);
                 GUILayout.EndHorizontal();
-
+                count++;
+                if (count >= (slideV + 1) * max)
+                {
+                    break;
+                }
             }
         }
 
@@ -755,7 +814,7 @@ namespace Unity.BuildReportInspector
         {
             GUILayout.BeginHorizontal(odd ? OddStyle : EvenStyle);
             odd = !odd;
-            GUILayout.Space(15); 
+            GUILayout.Space(15);
             var reasons = report.strippingInfo.GetReasonsForIncluding(entity).ToList();
             if (!strippingIcons.ContainsKey(entity))
                 strippingIcons[entity] = StrippingEntityIcon(entity);
